@@ -86,9 +86,9 @@ Agregar WhatsApp o cambiar a GPT-4 solo requiere una nueva clase, sin tocar la l
 | Tarea 2 | `config/settings.py` + fixtures de test | ✅ Completada |
 | Tarea 3 | Schema Supabase + `app/db.py` | ✅ Completada |
 | Tarea 4 | Cifrado Fernet + validación webhook + rate limiter | ✅ Completada |
-| Tarea 5 | Capa de mensajería Telegram + FastAPI | ⏳ Pendiente |
-| Tarea 6 | Capa LLM (OllamaLLM) + configuración de nichos | ⏳ Pendiente |
-| Tarea 7 | Google Calendar + Calendly (stub) | ⏳ Pendiente |
+| Tarea 5 | Capa de mensajería Telegram + FastAPI | ✅ Completada |
+| Tarea 6 | Capa LLM (OllamaLLM) + configuración de nichos | ✅ Completada |
+| Tarea 7 | Google Calendar + Cal.com | ✅ Completada |
 | Tarea 8 | Clasificador de intenciones + extractor de entidades | ⏳ Pendiente |
 | Tarea 9 | Máquina de estados + AgentCore (orquestador) | ⏳ Pendiente |
 | Tarea 10 | Notificaciones y recordatorios automáticos | ⏳ Pendiente |
@@ -136,14 +136,63 @@ uvicorn main:app --port 8000 --reload
 
 ---
 
+## Configuración de Calendarios
+
+El sistema soporta dos proveedores de calendario. Cada tenant elige uno al registrarse.
+
+### Google Calendar
+
+1. Ir a [Google Cloud Console](https://console.cloud.google.com)
+2. Crear proyecto → habilitar **Google Calendar API**
+3. Crear credenciales OAuth 2.0 → Desktop App → descargar `credentials.json`
+4. Ejecutar el script de autorización (una sola vez, abre el navegador):
+
+```python
+# scripts/setup_google_auth.py
+from google_auth_oauthlib.flow import InstalledAppFlow
+import json
+
+flow = InstalledAppFlow.from_client_secrets_file(
+    "credentials.json",
+    scopes=["https://www.googleapis.com/auth/calendar"]
+)
+creds = flow.run_local_server(port=0)
+print(json.dumps({
+    "token": creds.token,
+    "refresh_token": creds.refresh_token,
+    "token_uri": creds.token_uri,
+    "client_id": creds.client_id,
+    "client_secret": creds.client_secret,
+}))
+```
+
+5. El JSON impreso se cifra con Fernet y se guarda en `calendar_integrations` (campo `credentials_encrypted`)
+
+### Cal.com
+
+1. Crear cuenta en [cal.com](https://cal.com) (plan gratuito)
+2. Ir a **Settings → Developer → API Keys** → generar API key
+3. Crear un **Event Type** (ej: "Consulta 30 min") → copiar el ID numérico
+4. Guardar `api_key` y `event_type_id` en `calendar_integrations`
+
+---
+
 ## Seguridad y privacidad
 
-- **Cifrado Fernet**: RUT, teléfono y email se cifran en reposo antes de guardar en Supabase
-- **Row Level Security**: cada tenant solo puede acceder a sus propios datos
-- **Validación HMAC**: cada webhook de Telegram es verificado con firma SHA-256
-- **Rate limiting**: máximo de mensajes por minuto por usuario para prevenir abuso
-- **Consentimiento explícito**: el bot solicita autorización antes de guardar datos personales
-- **Derecho al olvido**: el usuario puede pedir eliminación de sus datos en cualquier momento
+- **Cifrado Fernet** (`FernetCipher`): RUT, teléfono y email se cifran con AES-128 antes de guardar en Supabase. La clave nunca toca la BD.
+- **Validación HMAC** (`WebhookValidator`): cada webhook de Telegram es verificado con firma SHA-256 — mensajes falsos son rechazados con HTTP 403.
+- **Rate limiting** (`RateLimiter`): máximo configurable de mensajes por minuto por usuario (default: 10). Límites independientes por usuario.
+- **Row Level Security**: cada tenant solo puede acceder a sus propios datos (políticas Supabase).
+- **Consentimiento explícito**: el bot solicita autorización antes de guardar cualquier dato personal.
+- **Derecho al olvido**: el usuario puede escribir "eliminar mis datos" y el agente anonimiza su registro en la BD.
+
+### Cómo generar la clave Fernet
+
+```python
+from cryptography.fernet import Fernet
+print(Fernet.generate_key().decode())
+# Copiar el resultado en .env como FERNET_ENCRYPTION_KEY=<resultado>
+```
 
 ---
 
